@@ -1,0 +1,7 @@
+.terraform
+.idea
+*.tfstate
+*.tfstate*
+terraform-provider-confluent
+crash.log
+main.tf
