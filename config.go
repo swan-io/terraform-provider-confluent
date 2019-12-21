@@ -19,7 +19,7 @@ type Config struct {
 	Me          *Me
 	Session     *Session
 	AccessToken *AccessToken
-	Mutext      sync.Mutex
+	Mutex       sync.Mutex
 }
 
 type Session struct {
@@ -173,8 +173,8 @@ func (c *Config) loadAndValidate() error {
 }
 
 func (c *Config) connect() error {
-	c.Mutext.Lock()
-	defer c.Mutext.Unlock()
+	c.Mutex.Lock()
+	defer c.Mutex.Unlock()
 	log.Printf("Connecting")
 	if c.Session == nil {
 		session, err := getSession(c.ApiEndpoint, c.Email, c.Password)
