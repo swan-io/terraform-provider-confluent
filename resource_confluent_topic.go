@@ -145,12 +145,12 @@ func resourceTopicCreate(d *schema.ResourceData, m interface{}) error {
 
 	cluster, err := config.getCluster(clusterName)
 	if err != nil {
-		return nil
+		return err
 	}
 
 	err = config.createTopic(*cluster, name, d.Get("num_partitions").(int), params)
 	if err != nil {
-		return nil
+		return err
 	}
 
 	d.SetId(clusterName+"-"+name)

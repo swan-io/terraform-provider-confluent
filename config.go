@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"sync"
 )
 
 type Config struct {
@@ -18,6 +19,7 @@ type Config struct {
 	Me          *Me
 	Session     *Session
 	AccessToken *AccessToken
+	Mutext      sync.Mutex
 }
 
 type Session struct {
@@ -171,6 +173,8 @@ func (c *Config) loadAndValidate() error {
 }
 
 func (c *Config) connect() error {
+	c.Mutext.Lock()
+	defer c.Mutext.Unlock()
 	log.Printf("Connecting")
 	if c.Session == nil {
 		session, err := getSession(c.ApiEndpoint, c.Email, c.Password)
