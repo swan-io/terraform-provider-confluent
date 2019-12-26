@@ -73,11 +73,18 @@ provider "confluent" {  }
 ### Create a Kafka topic
 
 ```hcl-terraform
+# Get Cluster
+data "confluent_cluster" "cluster" {
+  name = "kafka-cluster"
+} 
+
 resource "confluent_topic" "topic" {
-  cluster        = "kafka-cluster"
+  cluster_id     = confluent_cluster.cluster.id
   name           = "terraform"
   num_partitions = 3  
 }
 ```
 
 Available options are available in [resource_confluent_topic.go](resource_confluent_topic.go) (documentation not yet available).
+
+

@@ -8,20 +8,24 @@ func Provider() *schema.Provider {
 	return &schema.Provider{
 		Schema: map[string]*schema.Schema{
 			"email": {
-				Type: schema.TypeString,
-				Required: true,
+				Type:        schema.TypeString,
+				Required:    true,
 				DefaultFunc: schema.EnvDefaultFunc("CONFLUENT_EMAIL", nil),
 				Description: "Confluent email",
 			},
 			"password": {
-				Type: schema.TypeString,
-				Required: true,
+				Type:        schema.TypeString,
+				Required:    true,
 				DefaultFunc: schema.EnvDefaultFunc("CONFLUENT_PASSWORD", nil),
 				Description: "Confluent password",
 			},
 		},
 		ResourcesMap: map[string]*schema.Resource{
-					"confluent_topic": resourceTopic(),
+			"confluent_topic": resourceTopic(),
+		},
+		DataSourcesMap: map[string]*schema.Resource{
+			"confluent_cluster": dataSourceConfluentCluster(),
+			"confluent_account": dataSourceConfluentAccount(),
 		},
 		ConfigureFunc: configureProvider,
 	}

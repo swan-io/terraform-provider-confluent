@@ -29,7 +29,7 @@ type Session struct {
 }
 
 type User struct {
-	Id                 int         "json:id"
+	Id                 int         `json:"id"`
 	Email              string      "json:email"
 	FirstName          string      `json:"first_name"`
 	LastName           string      `json:"last_name"`
@@ -202,8 +202,12 @@ func (c *Config) connect() error {
 }
 
 func (c *Config) getClusters() (*Clusters, error) {
+	return c.getClustersPerAccount(c.Me.Account.Id)
+}
+
+func (c *Config) getClustersPerAccount(accountId string) (*Clusters, error) {
 	client := http.Client{}
-	requestCluster, err := http.NewRequest("GET", c.ApiEndpoint+"/api/clusters?account_id="+c.Me.Account.Id, nil)
+	requestCluster, err := http.NewRequest("GET", c.ApiEndpoint+"/api/clusters?account_id="+accountId, nil)
 	requestCluster.Header.Add("cookie", "auth_token="+c.Session.Token)
 	respCluster, err := client.Do(requestCluster)
 	if err != nil {
@@ -219,8 +223,22 @@ func (c *Config) getClusters() (*Clusters, error) {
 	return &clusters, nil
 }
 
-func (c *Config) getCluster(clusterName string) (*Cluster, error) {
-	clusters, err := c.getClusters()
+func (c *Config) getClusterPerAccount(accountId string,  clusterId string) (*Cluster, error) {
+	clusters, err := c.getClustersPerAccount(accountId)
+	if err != nil {
+		return nil, err
+	}
+	for _, cluster := range clusters.Clusters {
+		if cluster.Id == clusterId {
+			return &cluster, nil
+		}
+	}
+
+	return nil, errors.New("Unable to find Cluster with Id " + clusterId + " for account "+accountId)
+}
+
+func (c *Config) getCluster(accountId string, clusterName string) (*Cluster, error) {
+	clusters, err := c.getClustersPerAccount(accountId)
 	if err != nil {
 		return nil, err
 	}

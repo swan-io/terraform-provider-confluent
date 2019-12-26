@@ -15,10 +15,19 @@ func resourceTopic() *schema.Resource {
 		Delete: resourceTopicDelete,
 
 		Schema: map[string]*schema.Schema{
-			"cluster": &schema.Schema{
+			"account_id": &schema.Schema{
+				Type:     schema.TypeString,
+				ForceNew: true,
+				Optional: true,
+			},
+			"cluster_id": &schema.Schema{
 				Type:     schema.TypeString,
 				ForceNew: true,
 				Required: true,
+			},
+			"cluster_name": &schema.Schema{
+				Type:     schema.TypeString,
+				Computed: true,
 			},
 			"name": &schema.Schema{
 				Type:     schema.TypeString,
@@ -29,63 +38,63 @@ func resourceTopic() *schema.Resource {
 				Type:     schema.TypeInt,
 				Optional: true,
 				ForceNew: true,
-				Default: 3,
+				Default:  3,
 			},
 			"cleanup_policy": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
-				Default: "delete",
+				Default:  "delete",
 			},
 			"retention_ms": &schema.Schema{
 				Type:     schema.TypeInt,
 				Optional: true,
-				Default: 604800000,
+				Default:  604800000,
 			},
 			"segment_bytes": &schema.Schema{
 				Type:     schema.TypeInt,
 				Optional: true,
-				Default: 1073741824,
+				Default:  1073741824,
 			},
 			"max_message_bytes": &schema.Schema{
 				Type:     schema.TypeInt,
 				Optional: true,
-				Default: 2097164,
+				Default:  2097164,
 			},
 			"min_compaction_lag_ms": &schema.Schema{
 				Type:     schema.TypeInt,
 				Optional: true,
-				Default: 0,
+				Default:  0,
 			},
 			"message_timestamp_type": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
-				Default: "CreateTime",
+				Default:  "CreateTime",
 			},
 			"delete_retention_ms": &schema.Schema{
 				Type:     schema.TypeInt,
 				Optional: true,
-				Default: 86400000,
+				Default:  86400000,
 			},
 			"retention_bytes": &schema.Schema{
 				Type:     schema.TypeInt,
 				Optional: true,
-				Default: -1,
+				Default:  -1,
 			},
 			"segment_ms": &schema.Schema{
 				Type:     schema.TypeInt,
 				Optional: true,
-				Default: 604800000,
+				Default:  604800000,
 			},
 			"message_timestamp_difference_max_ms": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
-				Default: "9223372036854775807",
+				Default:  "9223372036854775807",
 			},
 		},
 	}
 }
 
-func getParams(d *schema.ResourceData) ([]KafkaTopicConfig){
+func getParams(d *schema.ResourceData) []KafkaTopicConfig {
 	params := []KafkaTopicConfig{
 		{
 			Name:  "cleanup.policy",
@@ -132,18 +141,23 @@ func getParams(d *schema.ResourceData) ([]KafkaTopicConfig){
 }
 
 func resourceTopicCreate(d *schema.ResourceData, m interface{}) error {
-	log.Printf("Creating topic: "+d.Get("name").(string))
 	config := m.(*Config)
-	if err:=config.connect(); err != nil {
+	if err := config.connect(); err != nil {
 		return err
 	}
 
-	clusterName := d.Get("cluster").(string)
 	name := d.Get("name").(string)
+	accountId, accountIdSet := d.GetOk("account_id")
+	if ! accountIdSet {
+		accountId = config.Me.Account.Id
+	}
+	clusterId := d.Get("cluster_id").(string)
+
+	log.Printf("Creating topic " + name + " in account " + accountId.(string) + " for cluster " + clusterId)
 
 	params := getParams(d)
 
-	cluster, err := config.getCluster(clusterName)
+	cluster, err := config.getClusterPerAccount(accountId.(string), clusterId)
 	if err != nil {
 		return err
 	}
@@ -153,17 +167,25 @@ func resourceTopicCreate(d *schema.ResourceData, m interface{}) error {
 		return err
 	}
 
-	d.SetId(clusterName+"-"+name)
+	d.SetId(accountId.(string) + "-" + clusterId + "-" + name)
 	return resourceTopicRead(d, m)
 }
 
 func resourceTopicRead(d *schema.ResourceData, m interface{}) error {
-	log.Printf("Reading topic: "+d.Get("name").(string))
 	config := m.(*Config)
-	if err:=config.connect(); err != nil {
+	if err := config.connect(); err != nil {
 		return err
 	}
-	cluster, err := config.getCluster(d.Get("cluster").(string))
+
+	accountId, accountIdSet := d.GetOk("account_id")
+	if ! accountIdSet {
+		accountId = config.Me.Account.Id
+	}
+	clusterId := d.Get("cluster_id")
+
+	log.Printf("Reading topic: " + d.Get("name").(string) + " for account " + accountId.(string) + " and cluster " + clusterId.(string))
+
+	cluster, err := config.getClusterPerAccount(accountId.(string), clusterId.(string))
 	if err != nil {
 		d.SetId("")
 		return nil
@@ -181,25 +203,31 @@ func resourceTopicRead(d *schema.ResourceData, m interface{}) error {
 	}
 
 	d.Set("name", topic.Name)
-	d.Set("cluster", cluster.Name)
+	d.Set("cluster_id", cluster.Id)
+	d.Set("cluster_name", cluster.Name)
 	d.Set("num_partitions", len(topic.Partitions))
 
 	return nil
 }
 
 func resourceTopicUpdate(d *schema.ResourceData, m interface{}) error {
-	log.Printf("Updating topic: "+d.Get("name").(string))
 	config := m.(*Config)
-	if err:=config.connect(); err != nil {
+	if err := config.connect(); err != nil {
 		return err
 	}
 
-	clusterName := d.Get("cluster").(string)
+	accountId, accountIdSet := d.GetOk("account_id")
+	if ! accountIdSet {
+		accountId = config.Me.Account.Id
+	}
+	clusterId := d.Get("cluster_id").(string)
 	name := d.Get("name").(string)
+
+	log.Printf("Updating topic " + name + " in account " + accountId.(string) + " for cluster " + clusterId)
 
 	params := getParams(d)
 
-	cluster, err := config.getCluster(clusterName)
+	cluster, err := config.getClusterPerAccount(accountId.(string), clusterId)
 	if err != nil {
 		return nil
 	}
@@ -212,16 +240,25 @@ func resourceTopicUpdate(d *schema.ResourceData, m interface{}) error {
 }
 
 func resourceTopicDelete(d *schema.ResourceData, m interface{}) error {
-	log.Printf("Deleting topic: "+d.Get("name").(string))
+	log.Printf("Deleting topic: " + d.Get("name").(string))
 	config := m.(*Config)
-	if err:=config.connect(); err != nil {
+	if err := config.connect(); err != nil {
 		return err
 	}
-	cluster, err := config.getCluster(d.Get("cluster").(string))
+
+	accountId, accountIdSet := d.GetOk("account_id")
+	if ! accountIdSet {
+		accountId = config.Me.Account.Id
+	}
+	clusterId := d.Get("cluster_id").(string)
+	name := d.Get("name").(string)
+	log.Printf("Deleting topic " + name + " in account " + accountId.(string) + " for cluster " + clusterId)
+
+	cluster, err := config.getClusterPerAccount(accountId.(string), clusterId)
 	if err != nil {
 		return err
 	}
-	config.deleteTopic(*cluster, d.Get("name").(string))
+	config.deleteTopic(*cluster, name)
 
 	d.SetId("")
 	return nil
