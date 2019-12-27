@@ -118,6 +118,13 @@ type Cluster struct {
 	Dedicated         bool   "json:dedicated"
 }
 
+type CreateClusterResponse struct {
+	Error            interface{} `json:"error"`
+	ValidationErrors interface{} `json:"validation_errors"`
+	Cluster          Cluster     `json:"cluster"`
+	Credentials      interface{} `json:"credentials"`
+}
+
 type Clusters struct {
 	Error    interface{} "json:error"
 	Clusters []Cluster   "json:clusters"
@@ -223,7 +230,130 @@ func (c *Config) getClustersPerAccount(accountId string) (*Clusters, error) {
 	return &clusters, nil
 }
 
-func (c *Config) getClusterPerAccount(accountId string,  clusterId string) (*Cluster, error) {
+func (c *Config) createClusterPerAccount(accountId string, name string, durability string, region string, serviceProvider string) (*Cluster, error) {
+	createClusterRequest := map[string]map[string]interface{}{
+		"config": {
+			"name":             name,
+			"account_id":       accountId,
+			"network_ingress":  100,
+			"network_egress":   100,
+			"storage":          5000,
+			"durability":       durability,
+			"region":           region,
+			"service_provider": serviceProvider,
+		},
+	}
+
+	bytesRepresentation, err := json.Marshal(createClusterRequest)
+	if err != nil {
+		return nil, err
+	}
+	//log.Printf(bytes.NewBuffer(bytesRepresentation).String())
+	client := retryablehttp.NewClient()
+	requestCreateCluster, err := retryablehttp.NewRequest("POST", "https://confluent.cloud/api/clusters", bytes.NewBuffer(bytesRepresentation))
+	if err != nil {
+		return nil, err
+	}
+	requestCreateCluster.Header.Set("Authorization", "Bearer "+c.AccessToken.Token)
+	requestCreateCluster.Header.Set("Content-Type", "application/json")
+	responseClusterCreate, err := client.Do(requestCreateCluster)
+	if err != nil {
+		return nil, err
+	}
+	defer responseClusterCreate.Body.Close()
+
+	if responseClusterCreate.StatusCode != 200 {
+		return nil, errors.New("HTTP error code creating cluster : " + strconv.Itoa(responseClusterCreate.StatusCode))
+	}
+
+	var CreateClusterResponse CreateClusterResponse
+	json.NewDecoder(responseClusterCreate.Body).Decode(&CreateClusterResponse)
+	return &CreateClusterResponse.Cluster, nil
+}
+
+func (c *Config) deleteCluster(cluster Cluster) error {
+	deleteClusterRequest := map[string]map[string]interface{}{
+		"cluster": {
+			"id":               cluster.Id,
+			"name":             cluster.Name,
+			"account_id":       cluster.AccountId,
+			"network_ingress":  cluster.NetworkIngress,
+			"network_egress":   cluster.NetworkEgress,
+			"storage":          cluster.Storage,
+			"durability":       cluster.Durability,
+			"region":           cluster.Region,
+			"service_provider": cluster.ServiceProvider,
+			"organization_id":  cluster.OrganizationId,
+		},
+	}
+	bytesRepresentation, err := json.Marshal(deleteClusterRequest)
+	if err != nil {
+		return err
+	}
+	log.Printf(bytes.NewBuffer(bytesRepresentation).String())
+	client := retryablehttp.NewClient()
+	requestDeleteCluster, err := retryablehttp.NewRequest("DELETE", "https://confluent.cloud/api/clusters/"+cluster.Id, bytes.NewBuffer(bytesRepresentation))
+	if err != nil {
+		return err
+	}
+	requestDeleteCluster.Header.Set("Authorization", "Bearer "+c.AccessToken.Token)
+	requestDeleteCluster.Header.Set("Content-Type", "application/json")
+	responseClusterCreate, err := client.Do(requestDeleteCluster)
+	if err != nil {
+		return err
+	}
+	defer responseClusterCreate.Body.Close()
+
+	if responseClusterCreate.StatusCode != 200 {
+		return errors.New("HTTP error code deleting cluster : " + strconv.Itoa(responseClusterCreate.StatusCode))
+	}
+
+	return nil
+}
+
+func (c *Config) updateCluster(cluster Cluster, newName string) (*Cluster, error) {
+	updateClusterRequest := map[string]map[string]interface{}{
+		"cluster": {
+			"id":               cluster.Id,
+			"name":             newName,
+			"account_id":       cluster.AccountId,
+			"network_ingress":  cluster.NetworkIngress,
+			"network_egress":   cluster.NetworkEgress,
+			"storage":          cluster.Storage,
+			"durability":       cluster.Durability,
+			"region":           cluster.Region,
+			"service_provider": cluster.ServiceProvider,
+			"organization_id":  cluster.OrganizationId,
+		},
+	}
+	bytesRepresentation, err := json.Marshal(updateClusterRequest)
+	if err != nil {
+		return nil, err
+	}
+	log.Printf(bytes.NewBuffer(bytesRepresentation).String())
+	client := retryablehttp.NewClient()
+	requestUpdateCluster, err := retryablehttp.NewRequest("PUT", "https://confluent.cloud/api/clusters/"+cluster.Id, bytes.NewBuffer(bytesRepresentation))
+	if err != nil {
+		return nil, err
+	}
+	requestUpdateCluster.Header.Set("Authorization", "Bearer "+c.AccessToken.Token)
+	requestUpdateCluster.Header.Set("Content-Type", "application/json")
+	responseUpdateCluster, err := client.Do(requestUpdateCluster)
+	if err != nil {
+		return nil, err
+	}
+	defer responseUpdateCluster.Body.Close()
+
+	if responseUpdateCluster.StatusCode != 200 {
+		return nil, errors.New("HTTP error code updating cluster : " + strconv.Itoa(responseUpdateCluster.StatusCode))
+	}
+
+	var UpdateClusterResponse CreateClusterResponse
+	json.NewDecoder(responseUpdateCluster.Body).Decode(&UpdateClusterResponse)
+	return &UpdateClusterResponse.Cluster, nil
+}
+
+func (c *Config) getClusterPerAccount(accountId string, clusterId string) (*Cluster, error) {
 	clusters, err := c.getClustersPerAccount(accountId)
 	if err != nil {
 		return nil, err
@@ -234,7 +364,21 @@ func (c *Config) getClusterPerAccount(accountId string,  clusterId string) (*Clu
 		}
 	}
 
-	return nil, errors.New("Unable to find Cluster with Id " + clusterId + " for account "+accountId)
+	return nil, errors.New("Unable to find Cluster with Id " + clusterId + " for account " + accountId)
+}
+
+func (c *Config) getClusterPerAccountAndName(accountId string, clusterName string) (*Cluster, error) {
+	clusters, err := c.getClustersPerAccount(accountId)
+	if err != nil {
+		return nil, err
+	}
+	for _, cluster := range clusters.Clusters {
+		if cluster.Name == clusterName {
+			return &cluster, nil
+		}
+	}
+
+	return nil, errors.New("Unable to find Cluster with Name " + clusterName + " for account " + accountId)
 }
 
 func (c *Config) getCluster(accountId string, clusterName string) (*Cluster, error) {
@@ -383,7 +527,7 @@ func (c *Config) updateTopicConfig(cluster Cluster, topicName string, params []K
 		"entries": configs,
 	}
 	bytesRepresentation, err := json.Marshal(topicConfig)
-	log.Printf(bytes.NewBuffer(bytesRepresentation).String())
+
 	requestUpdateTopicConfig, err := retryablehttp.NewRequest("PUT", cluster.ApiEndpoint+"/2.0/kafka/"+cluster.Id+"/topics/"+topicName+"/config", bytes.NewBuffer(bytesRepresentation))
 	requestUpdateTopicConfig.Header.Set("Authorization", "Bearer "+c.AccessToken.Token)
 	requestUpdateTopicConfig.Header.Set("Content-Type", "application/json")

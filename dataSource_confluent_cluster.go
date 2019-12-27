@@ -38,6 +38,10 @@ func dataSourceConfluentCluster() *schema.Resource {
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			"durability": &schema.Schema{
+				Type:     schema.TypeString,
+				Computed: true,
+			},
 		},
 	}
 }
@@ -63,6 +67,7 @@ func dataSourceClusterRead(d *schema.ResourceData, m interface{}) error {
 	d.Set("endpoint", cluster.Endpoint)
 	d.Set("api_endpoint", cluster.ApiEndpoint)
 	d.Set("status", cluster.Status)
+	d.Set("durability", cluster.Durability)
 	d.SetId(cluster.Id)
 	return nil
 }

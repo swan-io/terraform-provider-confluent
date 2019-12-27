@@ -21,7 +21,8 @@ func Provider() *schema.Provider {
 			},
 		},
 		ResourcesMap: map[string]*schema.Resource{
-			"confluent_topic": resourceTopic(),
+			"confluent_cluster": resourceCluster(),
+			"confluent_topic":   resourceTopic(),
 		},
 		DataSourcesMap: map[string]*schema.Resource{
 			"confluent_cluster": dataSourceConfluentCluster(),
