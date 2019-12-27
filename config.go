@@ -116,6 +116,37 @@ type Cluster struct {
 	IsSlaEnabled      bool   `json:"is_sla_enabled"`
 	IsSchedulable     bool   `json:"is_schedulable"`
 	Dedicated         bool   "json:dedicated"
+	Host string
+	Port int
+	Protocol string
+}
+
+type ApiKey struct {
+	Id              int           `json:"Id"`
+	Key             string        `json:"key"`
+	Secret          string        `json:"secret"`
+	HashSecret      string        `json:"hashed_secret"`
+	HashFunction    string        `json:"hash_function"`
+	SaslMechanism   string        `json:"sasl_mechanism"`
+	UserId          int           `json:"user_id"`
+	Deactivated     bool          `json:"deactivated"`
+	Created         string        `json:"created"`
+	Modified        string        `json:"modified"`
+	Description     string        `json:"description"`
+	Internal        interface{}   `json:"internal"`
+	LogicalClusters []interface{} `json:"logical_clusters"`
+	AccountId       string        `json:"account_id"`
+	ServiceAccount  bool          `json:"service_account"`
+}
+
+type ApiKeysResponse struct {
+	ApiKeys []ApiKey    `json:"api_keys"`
+	Error   interface{} `json:"error"`
+}
+
+type ApiKeyResponse struct {
+	ApiKey ApiKey      `json:"api_key"`
+	Error  interface{} `json:"error"`
 }
 
 type CreateClusterResponse struct {
@@ -172,6 +203,39 @@ type CreateTopicRequest struct {
 	NumPartitions     int               `json:"numPartitions"`
 	ReplicationFactor int               `json:"replicationFactor"`
 	Configs           CreateTopicConfig `json:"configs""`
+}
+
+type ApiKeyRequest struct {
+	AccountId string `json:"account_id"`
+	LogicalClusters []LogicalClusterRequest `json:"logical_clusters"`
+}
+
+type ApiKeyRequestDelete struct {
+	Id int `json:"id"`
+	AccountId string `json:"account_id"`
+	LogicalClusters []LogicalClusterRequest `json:"logical_clusters"`
+}
+
+type LogicalClusterRequest struct {
+	Id string `json:"id"`
+}
+
+type CreateApiKeyRequest struct {
+	ApiKey ApiKeyRequest `json:"api_key"`
+}
+
+type DeleteApiKeyRequest struct {
+	ApiKey ApiKeyRequestDelete `json:"api_key"`
+}
+
+type CreateApiKeyResponse struct {
+	ApiKey ApiKey `json:"api_key"`
+	Error interface{} `json:"error"`
+}
+
+type GetApiKeysResponse struct {
+	ApiKeys []ApiKey `json:"api_keys"`
+	Error interface{} `json:"error"`
 }
 
 func (c *Config) loadAndValidate() error {
@@ -351,6 +415,116 @@ func (c *Config) updateCluster(cluster Cluster, newName string) (*Cluster, error
 	var UpdateClusterResponse CreateClusterResponse
 	json.NewDecoder(responseUpdateCluster.Body).Decode(&UpdateClusterResponse)
 	return &UpdateClusterResponse.Cluster, nil
+}
+
+func (c *Config) getApiKey(cluster Cluster, keyId int) (*ApiKey, error) {
+	if apiKeys, err := c.getApiKeys(cluster); err != nil {
+		return nil, err
+	} else {
+		for _, apiKey := range apiKeys {
+			log.Printf("Loading key "+strconv.Itoa(apiKey.Id))
+			if apiKey.Id == keyId {
+				return &apiKey, nil
+			}
+		}
+		log.Printf("Unable to find Api Key with ID " +strconv.Itoa(keyId))
+		return nil, nil // Not Found
+	}
+}
+
+func (c *Config) getApiKeys(cluster Cluster) ([]ApiKey, error) {
+	client := retryablehttp.NewClient()
+	requestListApiKeys, err := retryablehttp.NewRequest("GET", "https://confluent.cloud/api/api_keys?account_id="+cluster.AccountId+"&cluster_id="+cluster.Id, nil)
+	if err != nil {
+		return nil, err
+	}
+	requestListApiKeys.Header.Add("cookie", "auth_token="+c.Session.Token)
+	respApiKeys, err := client.Do(requestListApiKeys)
+	if err != nil {
+		return nil, err
+	}
+	if respApiKeys.StatusCode != 200 {
+		return nil, errors.New("HTTP error code getting API Keys: " + strconv.Itoa(respApiKeys.StatusCode))
+	}
+	defer respApiKeys.Body.Close()
+
+	var GetApiKeysResponse GetApiKeysResponse
+	json.NewDecoder(respApiKeys.Body).Decode(&GetApiKeysResponse)
+	log.Printf("API Keys: "+ strconv.Itoa(len(GetApiKeysResponse.ApiKeys)))
+	return GetApiKeysResponse.ApiKeys, nil
+}
+
+func (c *Config) createApiKey(cluster Cluster) (*ApiKey, error) {
+	CreateApiKeyRequest := CreateApiKeyRequest{
+		ApiKey: ApiKeyRequest{
+			AccountId: cluster.AccountId,
+			LogicalClusters: []LogicalClusterRequest{
+				{Id: cluster.Id},
+			},
+		},
+	}
+
+	bytesRepresentation, err := json.Marshal(CreateApiKeyRequest)
+	if err != nil {
+		return nil, err
+	}
+	log.Printf(bytes.NewBuffer(bytesRepresentation).String())
+	client := retryablehttp.NewClient()
+	requestCreateApiKey, err := retryablehttp.NewRequest("POST", "https://confluent.cloud/api/api_keys", bytes.NewBuffer(bytesRepresentation))
+	if err != nil {
+		return nil, err
+	}
+	requestCreateApiKey.Header.Set("Authorization", "Bearer "+c.AccessToken.Token)
+	requestCreateApiKey.Header.Set("Content-Type", "application/json")
+	responseCreateApiKey, err := client.Do(requestCreateApiKey)
+	if err != nil {
+		return nil, err
+	}
+	defer responseCreateApiKey.Body.Close()
+
+	if responseCreateApiKey.StatusCode != 200 {
+		return nil, errors.New("HTTP error code creating API Key : " + strconv.Itoa(responseCreateApiKey.StatusCode))
+	}
+
+	var CreateApiKeyResponse CreateApiKeyResponse
+	json.NewDecoder(responseCreateApiKey.Body).Decode(&CreateApiKeyResponse)
+	return &CreateApiKeyResponse.ApiKey, nil
+}
+
+func (c *Config) deleteApiKey(cluster Cluster, keyId int) error {
+	DeleteApiKeyRequest := DeleteApiKeyRequest{
+		ApiKey: ApiKeyRequestDelete{
+			Id:              keyId,
+			AccountId:       cluster.AccountId,
+			LogicalClusters: []LogicalClusterRequest{
+				{Id: cluster.Id},
+			},
+		},
+	}
+
+	bytesRepresentation, err := json.Marshal(DeleteApiKeyRequest)
+	if err != nil {
+		return err
+	}
+	log.Printf(bytes.NewBuffer(bytesRepresentation).String())
+	client := retryablehttp.NewClient()
+	requestDeleteApiKey, err := retryablehttp.NewRequest("DELETE", "https://confluent.cloud/api/api_keys/"+ strconv.Itoa(keyId), bytes.NewBuffer(bytesRepresentation))
+	if err != nil {
+		return err
+	}
+	requestDeleteApiKey.Header.Set("Authorization", "Bearer "+c.AccessToken.Token)
+	requestDeleteApiKey.Header.Set("Content-Type", "application/json")
+	responseDeleteApiKey, err := client.Do(requestDeleteApiKey)
+	if err != nil {
+		return err
+	}
+	defer responseDeleteApiKey.Body.Close()
+
+	if responseDeleteApiKey.StatusCode != 200 {
+		return errors.New("HTTP error code deleting API Key : " + strconv.Itoa(responseDeleteApiKey.StatusCode))
+	}
+
+	return nil
 }
 
 func (c *Config) getClusterPerAccount(accountId string, clusterId string) (*Cluster, error) {
