@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -116,9 +117,33 @@ type Cluster struct {
 	IsSlaEnabled      bool   `json:"is_sla_enabled"`
 	IsSchedulable     bool   `json:"is_schedulable"`
 	Dedicated         bool   "json:dedicated"
-	Host string
-	Port int
-	Protocol string
+}
+
+func (cluster *Cluster) Host() string {
+	if cluster.Endpoint != "" {
+		tokens := strings.Split(cluster.Endpoint, ":")
+		return tokens[1][2:len(tokens[1])]
+	}
+	return ""
+}
+
+func (cluster *Cluster) Protocol() string {
+	if cluster.Endpoint != "" {
+		return strings.Split(cluster.Endpoint, ":")[0]
+	}
+	return ""
+}
+
+func (cluster *Cluster) Port() int {
+	if cluster.Endpoint != "" {
+		if port, err := strconv.Atoi(strings.Split(cluster.Endpoint, ":")[2]); err != nil {
+			return 0
+		} else {
+			return port
+		}
+
+	}
+	return 0
 }
 
 type ApiKey struct {
@@ -206,13 +231,13 @@ type CreateTopicRequest struct {
 }
 
 type ApiKeyRequest struct {
-	AccountId string `json:"account_id"`
+	AccountId       string                  `json:"account_id"`
 	LogicalClusters []LogicalClusterRequest `json:"logical_clusters"`
 }
 
 type ApiKeyRequestDelete struct {
-	Id int `json:"id"`
-	AccountId string `json:"account_id"`
+	Id              int                     `json:"id"`
+	AccountId       string                  `json:"account_id"`
 	LogicalClusters []LogicalClusterRequest `json:"logical_clusters"`
 }
 
@@ -229,13 +254,13 @@ type DeleteApiKeyRequest struct {
 }
 
 type CreateApiKeyResponse struct {
-	ApiKey ApiKey `json:"api_key"`
-	Error interface{} `json:"error"`
+	ApiKey ApiKey      `json:"api_key"`
+	Error  interface{} `json:"error"`
 }
 
 type GetApiKeysResponse struct {
-	ApiKeys []ApiKey `json:"api_keys"`
-	Error interface{} `json:"error"`
+	ApiKeys []ApiKey    `json:"api_keys"`
+	Error   interface{} `json:"error"`
 }
 
 func (c *Config) loadAndValidate() error {
@@ -422,12 +447,12 @@ func (c *Config) getApiKey(cluster Cluster, keyId int) (*ApiKey, error) {
 		return nil, err
 	} else {
 		for _, apiKey := range apiKeys {
-			log.Printf("Loading key "+strconv.Itoa(apiKey.Id))
+			log.Printf("Loading key " + strconv.Itoa(apiKey.Id))
 			if apiKey.Id == keyId {
 				return &apiKey, nil
 			}
 		}
-		log.Printf("Unable to find Api Key with ID " +strconv.Itoa(keyId))
+		log.Printf("Unable to find Api Key with ID " + strconv.Itoa(keyId))
 		return nil, nil // Not Found
 	}
 }
@@ -450,7 +475,7 @@ func (c *Config) getApiKeys(cluster Cluster) ([]ApiKey, error) {
 
 	var GetApiKeysResponse GetApiKeysResponse
 	json.NewDecoder(respApiKeys.Body).Decode(&GetApiKeysResponse)
-	log.Printf("API Keys: "+ strconv.Itoa(len(GetApiKeysResponse.ApiKeys)))
+	log.Printf("API Keys: " + strconv.Itoa(len(GetApiKeysResponse.ApiKeys)))
 	return GetApiKeysResponse.ApiKeys, nil
 }
 
@@ -494,8 +519,8 @@ func (c *Config) createApiKey(cluster Cluster) (*ApiKey, error) {
 func (c *Config) deleteApiKey(cluster Cluster, keyId int) error {
 	DeleteApiKeyRequest := DeleteApiKeyRequest{
 		ApiKey: ApiKeyRequestDelete{
-			Id:              keyId,
-			AccountId:       cluster.AccountId,
+			Id:        keyId,
+			AccountId: cluster.AccountId,
 			LogicalClusters: []LogicalClusterRequest{
 				{Id: cluster.Id},
 			},
@@ -508,7 +533,7 @@ func (c *Config) deleteApiKey(cluster Cluster, keyId int) error {
 	}
 	log.Printf(bytes.NewBuffer(bytesRepresentation).String())
 	client := retryablehttp.NewClient()
-	requestDeleteApiKey, err := retryablehttp.NewRequest("DELETE", "https://confluent.cloud/api/api_keys/"+ strconv.Itoa(keyId), bytes.NewBuffer(bytesRepresentation))
+	requestDeleteApiKey, err := retryablehttp.NewRequest("DELETE", "https://confluent.cloud/api/api_keys/"+strconv.Itoa(keyId), bytes.NewBuffer(bytesRepresentation))
 	if err != nil {
 		return err
 	}
